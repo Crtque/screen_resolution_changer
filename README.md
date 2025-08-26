@@ -9,3 +9,9 @@ to start tool with different language
 lang_name available values list:
 * en
 * ru
+
+
+Build
+```
+dotnet publish -c Release
+```
