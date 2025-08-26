@@ -5,6 +5,22 @@
     <TargetFramework>net9.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
+    <SelfContained>true</SelfContained>
+    <PublishSingleFile>true</PublishSingleFile>
+    <PublishReadyToRun>false</PublishReadyToRun>
+    <PublishTrimmed>true</PublishTrimmed>
+    <TrimMode>full</TrimMode>
+    <InvariantGlobalization>true</InvariantGlobalization>
+
+  <!-- Встраиваем только нужные языки ресурсов (если есть .resx) -->
+    <SatelliteResourceLanguages>ru;en</SatelliteResourceLanguages>
+
+  <!-- Не тащим PDB и отладочную инфу -->
+    <DebugType>none</DebugType>
+    <DebugSymbols>false</DebugSymbols>
+
+  <!-- Сжатие single-file обычно включено, явно не помешает -->
+    <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
   </PropertyGroup>
 
 </Project>
