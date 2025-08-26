@@ -20,7 +20,8 @@ class Program
             ["restart"] = "Settings saved. System restart required to apply.",
             ["fail_badmode"] = "Driver rejected the mode (BADMODE).",
             ["fail_test"] = "Test of mode failed. Code: {0}",
-            ["fail_apply"] = "Could not apply mode. Code: {0}"
+            ["fail_apply"] = "Could not apply mode. Code: {0}",
+            ["hz_not_available"] = "Requested frequency {0} Hz is not available."
         },
         ["ru"] = new Dictionary<string, string>
         {
@@ -34,16 +35,15 @@ class Program
             ["restart"] = "Параметры сохранены. Для применения требуется перезагрузка системы.",
             ["fail_badmode"] = "Драйвер отклонил режим (BADMODE).",
             ["fail_test"] = "Тест режима не прошёл. Код: {0}",
-            ["fail_apply"] = "Не удалось применить режим. Код: {0}"
+            ["fail_apply"] = "Не удалось применить режим. Код: {0}",
+            ["hz_not_available"] = "Запрошенная частота {0} Гц недоступна."
         }
     };
 
-    // ====== Выбранный язык ======
     static string lang = "en"; // default
     static Dictionary<string, string> T => translations.ContainsKey(lang) ? translations[lang] : translations["en"];
-
-    static string _(string key, params object[] args)
-        => T.ContainsKey(key) ? string.Format(T[key], args) : key;
+    static string _(string key, params object[] args) => 
+        T.ContainsKey(key) ? string.Format(T[key], args) : key;
 
     // ====== WinAPI ======
     [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Ansi)]
@@ -54,66 +54,41 @@ class Program
 
         [MarshalAs(UnmanagedType.ByValTStr, SizeConst = CCHDEVICENAME)]
         public string dmDeviceName;
-
-        public short dmSpecVersion;
-        public short dmDriverVersion;
-        public short dmSize;
-        public short dmDriverExtra;
-        public int dmFields;
-
-        public int dmPositionX;
-        public int dmPositionY;
-        public int dmDisplayOrientation;
-        public int dmDisplayFixedOutput;
-
-        public short dmColor;
-        public short dmDuplex;
-        public short dmYResolution;
-        public short dmTTOption;
-        public short dmCollate;
-
+        public short dmSpecVersion, dmDriverVersion, dmSize, dmDriverExtra;
+        public int dmFields, dmPositionX, dmPositionY, dmDisplayOrientation, dmDisplayFixedOutput;
+        public short dmColor, dmDuplex, dmYResolution, dmTTOption, dmCollate;
         [MarshalAs(UnmanagedType.ByValTStr, SizeConst = CCHFORMNAME)]
         public string dmFormName;
-
         public short dmLogPixels;
-        public int dmBitsPerPel;     // цветность
-        public int dmPelsWidth;      // ширина
-        public int dmPelsHeight;     // высота
-        public int dmDisplayFlags;
-        public int dmDisplayFrequency; // частота (Гц)
-
-        public int dmICMMethod;
-        public int dmICMIntent;
-        public int dmMediaType;
-        public int dmDitherType;
-        public int dmReserved1;
-        public int dmReserved2;
-        public int dmPanningWidth;
-        public int dmPanningHeight;
+        public int dmBitsPerPel, dmPelsWidth, dmPelsHeight, dmDisplayFlags, dmDisplayFrequency;
+        public int dmICMMethod, dmICMIntent, dmMediaType, dmDitherType, dmReserved1, dmReserved2, dmPanningWidth, dmPanningHeight;
     }
 
-    [DllImport("user32.dll")]
-    public static extern int EnumDisplaySettings(string deviceName, int modeNum, ref DEVMODE devMode);
-
-    [DllImport("user32.dll")]
-    public static extern int ChangeDisplaySettings(ref DEVMODE devMode, int flags);
+    [DllImport("user32.dll")] public static extern int EnumDisplaySettings(string deviceName, int modeNum, ref DEVMODE devMode);
+    [DllImport("user32.dll")] public static extern int ChangeDisplaySettings(ref DEVMODE devMode, int flags);
 
     const int ENUM_CURRENT_SETTINGS = -1;
-    const int DM_BITSPERPEL = 0x00040000;
-    const int DM_PELSWIDTH = 0x00080000;
-    const int DM_PELSHEIGHT = 0x00100000;
-    const int DM_DISPLAYFREQUENCY = 0x00400000;
-    const int CDS_TEST = 0x00000002;
-    const int CDS_UPDATEREGISTRY = 0x00000001;
-    const int DISP_CHANGE_SUCCESSFUL = 0;
-    const int DISP_CHANGE_RESTART = 1;
-    const int DISP_CHANGE_BADMODE = -2;
+    const int DM_BITSPERPEL = 0x00040000, DM_PELSWIDTH = 0x00080000, DM_PELSHEIGHT = 0x00100000, DM_DISPLAYFREQUENCY = 0x00400000;
+    const int CDS_TEST = 0x00000002, CDS_UPDATEREGISTRY = 0x00000001;
+    const int DISP_CHANGE_SUCCESSFUL = 0, DISP_CHANGE_RESTART = 1, DISP_CHANGE_BADMODE = -2;
 
     static void Main(string[] args)
     {
-        // Язык можно задавать аргументом: "app.exe en"
-        if (args.Length > 0 && translations.ContainsKey(args[0]))
-            lang = args[0];
+        int? targetHzArg = null;
+
+        // --- аргументы: язык и частота
+        for (int i = 0; i < args.Length; i++)
+        {
+            if (translations.ContainsKey(args[i]))
+            {
+                lang = args[i];
+            }
+            else if (args[i] == "-hz" && i + 1 < args.Length && int.TryParse(args[i + 1], out int hz))
+            {
+                targetHzArg = hz;
+                i++;
+            }
+        }
 
         var current = CreateDevMode();
         if (EnumDisplaySettings(null, ENUM_CURRENT_SETTINGS, ref current) == 0)
@@ -137,13 +112,26 @@ class Program
             return;
         }
 
-        Console.WriteLine(_($"available_modes"));
-        for (int i = 0; i < refreshRates.Count; i++)
+        // --- если частота задана через аргумент
+        if (targetHzArg.HasValue)
         {
-            Console.WriteLine($"{i + 1} - {refreshRates[i]} Hz");
+            if (refreshRates.Contains(targetHzArg.Value))
+            {
+                ApplyFrequency(current, targetHzArg.Value);
+            }
+            else
+            {
+                Console.WriteLine(_("hz_not_available", targetHzArg.Value));
+            }
+            return;
         }
 
-        Console.Write(_($"choose"));
+        // --- иначе меню
+        Console.WriteLine(_("available_modes"));
+        for (int i = 0; i < refreshRates.Count; i++)
+            Console.WriteLine($"{i + 1} - {refreshRates[i]} Hz");
+
+        Console.Write(_("choose"));
         string? input = Console.ReadLine();
         if (!int.TryParse(input, out int choice) || choice < 1 || choice > refreshRates.Count)
         {
@@ -151,11 +139,15 @@ class Program
             return;
         }
 
-        int targetHz = refreshRates[choice - 1];
-        Console.WriteLine(_($"applying", targetHz));
+        ApplyFrequency(current, refreshRates[choice - 1]);
+    }
+
+    static void ApplyFrequency(DEVMODE current, int hz)
+    {
+        Console.WriteLine(_("applying", hz));
 
         var newMode = current;
-        newMode.dmDisplayFrequency = targetHz;
+        newMode.dmDisplayFrequency = hz;
         newMode.dmFields = DM_DISPLAYFREQUENCY | DM_PELSWIDTH | DM_PELSHEIGHT | DM_BITSPERPEL;
 
         int test = ChangeDisplaySettings(ref newMode, CDS_TEST);
@@ -190,14 +182,12 @@ class Program
         while (EnumDisplaySettings(null, modeNum, ref dm) != 0)
         {
             if (dm.dmPelsWidth == width && dm.dmPelsHeight == height && dm.dmBitsPerPel == bpp && dm.dmDisplayFrequency > 0)
-            {
                 set.Add(dm.dmDisplayFrequency);
-            }
             modeNum++;
         }
 
         var list = set.ToList();
-        list.Sort((a, b) => b.CompareTo(a));
+        list.Sort((a, b) => b.CompareTo(a)); // по убыванию
         return list;
     }
 }
